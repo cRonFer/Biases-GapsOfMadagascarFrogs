@@ -1,50 +1,36 @@
 wd <- 'C:/Users/Joaquin Hortal/Desktop/NICED_SCENIC/Albert-Ranas'
-
 wd <- 'C:/Users/MNCN-JHICA/Desktop/proyectoInveCov'
 setwd(wd)
-  ### RUN SCRIPT 1 - grid
-  ### RUN SCRIPT 2 - inventory completeness
-# Plot completeness estimators for establishing threshold of well-surveyed cells ----
-  threshold_plot <- function(var, x, xtitle){
-    ggplot(est) +
-      geom_point(aes(var, Completeness), pch = 19, size = 1) +
-      geom_vline(xintercept = x, col = 'red3', lwd = 1, lty = 2) +
-      geom_hline(yintercept = 75, col = 'grey', lwd = 1, lty = 2) + # Here completeness threshold =70%
-      theme_minimal() +
-      ylab('') +
-      xlab(xtitle) +
-      theme(strip.text.y = element_blank(),
-            axis.text = element_text(size = 10, face = "bold"),
-            axis.title = element_text(size = 10, face = "bold"))
-  }
+### FIRST RUN SCRIPTS  - function_loadpackages, 
+                        # function_create_set_wd 
 
-  # Study area shpfiles
+# Study area shpfiles ####
   # Load study area
-  crs = 4326
+  crs = 'epsg:4326'
   study_area_pol <- read_sf('shpfiles/studyArea4326_mdg&myt.gpkg')
   study_area_pol_crs <- st_transform(study_area_pol, crs)
   data(adworld) # knowBR needs add world polygon to work
 
-  grid <- st_read('shpfiles/grid_MDG75.gpkg')
+  grid <- st_read('shpfiles/grid_MDG75.gpkg') # grid_01 or grid_03
   
   grid <- st_join(grid, study_area_pol, join = st_intersects)
   grid <- grid %>% 
     filter(!is.na(NAME_0))
   plot(grid)
   
-  grid_spatial <- st_transform(grid, crs = 4326)
+  grid_spatial <- st_transform(grid, crs = crs)
   grid_spatial <- sf::as_Spatial(grid_spatial)
   grid_ea <- grid_spatial
   est_sum <- grid[0, ]
-  # Occurrence records
+  
+  # Occurrence records ####
   # Load occurrences dataset (3 column format: Species, Longitude, Latitude)
   data <- fread('Data/FrogsDescribedrev.csv', sep = ';')
-  data <- fread('invecov/Data/combinedFrogsrev.csv', sep = ';')
-  
-  data_points <- sf::st_as_sf(data,
-                              coords = c("Longitude", "Latitude"),
-                              crs = crs)
-  data_points <- vect(data_points)
+  # data <- fread('invecov/Data/combinedFrogsrev.csv', sep = ';')
+  # transform into spatial object
+  data_points <- vect(data, geom = c("Longitude", "Latitude"), 
+       crs = crs)
+
   # Filter dataset to only records with consensus species name:
   data <- data[!is.na('Species'), ]
   # Add field of abundance for knowBR
@@ -59,6 +45,7 @@ setwd(wd)
       coord_sf(crs = crs) +
       theme_minimal() +
       theme(plot.background = element_rect(fill = 'white', color = 'white'))
+ 
  map2 <- ggplot() +
    geom_sf(data = study_area_pol, fill = 'lightgrey', color = "lightgrey", 
            linewidth = 0.7) +
@@ -72,9 +59,26 @@ setwd(wd)
   ggsave('map_points_describedFrogs.png', plot = last_plot(), 
          width = 10, height = 10, dpi = 600)
   
-  # Inventory completeness analysis
- 
-  # Create working directory ####
+# Inventory completeness analysis ####
+  # Well-surveyed criteria:
+  NRecords_WS <- 50
+  Ratio_WS <- 5
+  Slope_WS <- 0.02
+  Completeness_WS <- 75
+  # Plot completeness estimators for establishing threshold of well-surveyed cells ----
+  threshold_plot <- function(var, x, xtitle){
+    ggplot(est) +
+      geom_point(aes(var, Completeness), pch = 19, size = 1) +
+      geom_vline(xintercept = x, col = 'red3', lwd = 1, lty = 2) +
+      geom_hline(yintercept = 75, col = 'grey', lwd = 1, lty = 2) + # Here completeness threshold =70%
+      theme_minimal() + 
+      ylab('') +
+      xlab(xtitle) +
+      theme(strip.text.y = element_blank(),
+            axis.text = element_text(size = 10, face = "bold"),
+            axis.title = element_text(size = 10, face = "bold"))
+  }
+  # Create working directory for described DT - All occurrences ####
   dir_e = 'described_07'
   create_and_set_directory(dir_e)
   
@@ -89,11 +93,6 @@ setwd(wd)
   # Check the estimators from knowBR output:
   est <- read.csv('Estimators.CSV', header = TRUE, sep = ",")
   
-  # Well-surveyed criteria:
-  NRecords_WS <- 50
-  Ratio_WS <- 5
-  Slope_WS <- 0.02
-  Completeness_WS <- 75
   # Distribution of completeness values by other estimators:
   p1 <- threshold_plot(est$Records, NRecords_WS, 'Records') + ylab('Completeness')
   p2 <- threshold_plot(est$Ratio, Ratio_WS, 'Ratio')
@@ -101,11 +100,13 @@ setwd(wd)
   completn_thresholds <- grid.arrange(p1, p2, p3, ncol = 3)
   ggsave('completeness_thresholds.png', plot = completn_thresholds,
          width = 12, height = 5)
+  
   # plot completeness values study area map
-  comp_shp <- merge(grid, est, by.x = 'id', by.y = 'Area', all.x = TRUE) # Write here 'by.x' = the unique identifier name of your grid shapefile
+  comp_shp <- merge(grid, est, by.x = 'id', 
+                    by.y = 'Area', all.x = TRUE) # Write here 'by.x' = the unique identifier name of your grid shapefile
   comp_shp <- comp_shp %>%
-    filter(!is.na(Completeness)) %>%
-    st_transform(crs)
+                      filter(!is.na(Completeness)) %>%
+                      st_transform(crs)
   
   # Filter est dataset selecting WELL-SURVEYED CELLS:
   estWS <- comp_shp %>% filter(Records >= NRecords_WS) %>%
@@ -113,9 +114,9 @@ setwd(wd)
     filter(Slope <= Slope_WS) %>%
     filter(Completeness >= Completeness_WS)
  
-  print(paste('There are ', nrow(estWS), ' well surveyed cells in the study area based on the chosen thresholds'))
-    # Map of Completeness
-  #. 4. Plot of inv. completeness values map
+  print(paste('There are ', nrow(estWS), 
+              ' well surveyed cells in the study area based on the chosen thresholds'))
+  # Map of Completeness
     ggplot() +
     geom_sf(data = study_area_pol, fill = 'lightgrey', color = 'darkgrey') +
     geom_sf(data = comp_shp, aes(fill = Completeness), color = "transparent") +
@@ -138,7 +139,7 @@ setwd(wd)
   WS_cent_dt$geometry <- NULL
   fwrite(WS_cent_dt, 'WS_centroids.csv', sep = ";")
   
-  # Inventory completeness analysis ####
+  # Inventory completeness analysis only occurrences with genetic information ####
   data1 <- data %>% 
              filter(Genetics == 'YES') %>% 
               select(c(1:3,5))
@@ -151,49 +152,12 @@ setwd(wd)
                admAreas = FALSE,  # Use predefined grid as personalized polygons
                shapenames = "id", Maps = FALSE,
                dec = ".")
-  # Check the estimators from knowBR output:
-  est <- read.csv('Estimators.CSV', header = TRUE, sep = ",")
-  # plot completeness values study area map
-  comp_shp <- merge(grid, est, by.x = 'id', by.y = 'Area', all.x = TRUE) # Write here 'by.x' = the unique identifier name of your grid shapefile
-  comp_shp <- comp_shp %>%
-    filter(!is.na(Completeness)) %>%
-    st_transform(crs)
+#### REPEAT FROM LINE 90
   
-  # Filter est dataset selecting WELL-SURVEYED CELLS:
-  estWS <- comp_shp %>% filter(Records >= NRecords_WS) %>%
-    filter(Ratio >= Ratio_WS) %>%
-    filter(Slope <= Slope_WS) %>%
-    filter(Completeness >= Completeness_WS)
-  
-  print(paste('There are ', nrow(estWS), ' well surveyed cells in the study area based on the chosen thresholds'))
-  # Map of Completeness
-  #. 4. Plot of inv. completeness values map
-  ggplot() +
-    geom_sf(data = study_area_pol, fill = 'lightgrey', color = 'darkgrey') +
-    geom_sf(data = comp_shp, aes(fill = Completeness), color = "transparent") +
-    geom_sf(data = estWS, fill = 'transparent', color = "black", linewidth = 1) +
-    scale_fill_viridis_c(limits = c(0, 100), option = "plasma", name = "",
-                         direction = -1, alpha = 0.6) +
-    theme_minimal() +
-    theme(plot.background = element_rect(fill = "white", color = "transparent"),
-          legend.position = "none",
-          plot.title = element_text(size = 16, face = "bold", hjust = 1.1))
-  
-  ggsave('wellSurveyCells_Map.png', plot = last_plot(), dpi = 500, width = 6, height = 8)
-  
-  # Extract centroids of Well Survey cells for the environmental Space analysis
-  WS_cent <- st_centroid(estWS)
-  
-  WS_cent_dt <- WS_cent %>% dplyr::mutate(lon = sf::st_coordinates(.)[,1],
-                                          lat = sf::st_coordinates(.)[,2]) %>%
-    dplyr::select(c(id, lon, lat))
-  WS_cent_dt$geometry <- NULL
-  fwrite(WS_cent_dt, 'WS_centroids.csv', sep = ";")
-  
-  # Inventory completeness analysis ####
+  # Inventory completeness analysis only occurrences without genetic information####
   data2 <- data %>% 
-    filter(Genetics == 'NO') %>% 
-    select(c(1:3,5))
+              filter(Genetics == 'NO') %>% 
+              select(c(1:3,5))
   # Create working directory
   dir_e = 'described_07_nogen'
   setwd(wd)
@@ -203,47 +167,9 @@ setwd(wd)
                admAreas = FALSE,  # Use predefined grid as personalized polygons
                shapenames = "id", Maps = FALSE,
                dec = ".")
-  # Check the estimators from knowBR output:
-  est <- read.csv('Estimators.CSV', header = TRUE, sep = ",")
-  # plot completeness values study area map
-  comp_shp <- merge(grid, est, by.x = 'id', by.y = 'Area', all.x = TRUE) # Write here 'by.x' = the unique identifier name of your grid shapefile
-
-  comp_shp <- comp_shp %>%
-    filter(!is.na(Completeness)) %>%
-    st_transform(crs)
+  #### REPEAT FROM LINE 90
   
-  # Filter est dataset selecting WELL-SURVEYED CELLS:
-  estWS <- comp_shp %>% filter(Records >= NRecords_WS) %>%
-    filter(Ratio >= Ratio_WS) %>%
-    filter(Slope <= Slope_WS) %>%
-    filter(Completeness >= Completeness_WS)
-  
-  print(paste('There are ', nrow(estWS), ' well surveyed cells in the study area based on the chosen thresholds'))
-  # Map of Completeness
-  #. 4. Plot of inv. completeness values map
-  ggplot() +
-    geom_sf(data = study_area_pol, fill = 'lightgrey', color = 'darkgrey') +
-    geom_sf(data = comp_shp, aes(fill = Completeness), color = "transparent") +
-    geom_sf(data = estWS, fill = 'transparent', color = "black", linewidth = 1) +
-    scale_fill_viridis_c(limits = c(0, 100), option = "plasma", name = "",
-                         direction = -1, alpha = 0.6) +
-    theme_minimal() +
-    theme(plot.background = element_rect(fill = "white", color = "transparent"),
-          legend.position = "none",
-          plot.title = element_text(size = 16, face = "bold", hjust = 1.1))
-  
-  ggsave('wellSurveyCells_Map.png', plot = last_plot(), dpi = 500, width = 6, height = 8)
-  
-  # Extract centroids of Well Survey cells for the environmental Space analysis
-  WS_cent <- st_centroid(estWS)
-  
-  WS_cent_dt <- WS_cent %>% dplyr::mutate(lon = sf::st_coordinates(.)[,1],
-                                          lat = sf::st_coordinates(.)[,2]) %>%
-    dplyr::select(c(id, lon, lat))
-  WS_cent_dt$geometry <- NULL
-  fwrite(WS_cent_dt, 'WS_centroids.csv', sep = ";")
-  
-### plot diferences between datasets ####
+# plot differences between datasets ####
 grid_spatial_ws <- grid
 WS_cent_dt <- fread(paste0(wd, '/described_07/WS_centroids.csv'), sep = ';')
 WS_cent_dt <- WS_cent_dt$id

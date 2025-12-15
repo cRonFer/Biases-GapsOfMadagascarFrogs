@@ -1,52 +1,40 @@
-library(sampbias)
-# install.packages("rnaturalearthhires", repos = "https://ropensci.r-universe.dev")
-# library(rnaturalearthhires)
-library(rnaturalearth)
-library(terra)
-library(tidyterra)
-library(tidyr)
-# library(forcats)
-library(ggplot2)
-# library(viridis)
-library(cowplot)
-# library(sf)
+
 wd <- 'C:/Users/MNCN-JHICA/Desktop/proyectoInveCov'
-setwd(wd)
 # wd <- ('C:/Users/Joaquin Hortal/Desktop/NICED_SCENIC/')
+setwd(wd)
+
+dir_e = 'sampBias_outputs'
+create_and_set_directory(dir_e)
+
 crs_standard <- "EPSG:4326"
 area <- read_sf('shpfiles/studyArea4326_mdg&myt.gpkg')
-# area <- vect(paste0(wd,'Albert-Ranas/shpfiles/Capas/studyArea4326_mdg&myt.gpkg'))
 
 # Select and download raster files of variables from rnaturalearth ####
 gaz <- list()
 roads <- vect('naturalEarth/MDG_Roads.gpkg')
-# roads <- vect(paste0(wd,'Albert-Ranas/shpfiles/Capas/ne_10m_roads/ne_10m_roads.shp'))
 gaz[[1]] <- roads
 names(gaz)[[1]] <- 'Roads'
 crs(gaz$Roads) <- crs_standard
 
 pplaces <- vect('naturalEarth/MDG_populated_places.gpkg')
-# pplaces <- vect(paste0(wd,'Albert-Ranas/shpfiles/Capas/ne_10m_populated_places_simple/ne_10m_populated_places_simple.shp'))
 gaz[[2]] <- pplaces
 names(gaz)[[2]] <- 'Populated places'
 crs(gaz[[2]]) <- crs_standard
 
-## read extra layers
+#### Load extra layers #### 
 # rivers
-# rv <- vect(paste0(wd,'Albert-Ranas/shpfiles/rivers_mdg.gpkg'))
 rv <- vect('naturalEarth/MDG_Rivers.gpkg')
 crs(rv) <- crs_standard
 gaz[[3]] <- rv
 names(gaz)[[3]] <- 'Rivers'
 
 # protected areas
-# pa <- vect(paste0(wd,'Albert-Ranas/shpfiles/protct_areas.gpkg'))
 pa <- vect('naturalEarth/MDG_ProtAreas.gpkg')
 crs(pa) <- crs_standard
 gaz[[4]] <- pa
 names(gaz)[[4]] <- 'Protected Areas'
 
-#### Occurrence data ####
+#### Load Occurrence data ####
 data <- read.csv("Data/Frogsdescribedrev.csv", sep = ';')
 data <- data[,c(1,3,2,4)]
 colnames(data)[1] <- 'species'
@@ -55,28 +43,30 @@ colnames(data)[3] <- 'decimalLatitude'
 
 data0 <- data %>% filter(Genetics == 'NO') %>% select(-4)
 
-occurrences_sf <- vect(data0, geom = c("decimalLongitude", "decimalLatitude"), 
-                   crs = "epsg:4326")
+occurrences_sf <- vect(data0, 
+                       geom = c("decimalLongitude", "decimalLatitude"), 
+                   crs = crs_standard)
 
-
-# samp bias analyses ####
-out <- calculate_bias(data0, buffer= 0,
+# samp bias analysis ####
+out <- calculate_bias(data0, buffer = 0,
                       terrestrial = TRUE,
                       res = 0.1, gaz = gaz)
 
-setwd(paste0(wd,'/sampBias_outputs/sampBiasComb'))
+dir_e = 'sampBiasDesc'
+create_and_set_directory(dir_e)
+
 summary(out)
+
 capture.output(
   summary(out),
   file = "samp_bias_summary_descNoGen_01_new.txt"
 )
-#### boxplot #####
+## boxplot #####
 # Prepare data for ggplot
-weights_long <- pivot_longer(
-  out$bias_estimate,
-  cols = starts_with("w_"),
-  names_to = "bias_factor",
-  values_to = "weight")
+weights_long <- pivot_longer(out$bias_estimate,
+                                cols = starts_with("w_"),
+                                names_to = "bias_factor",
+                                values_to = "weight")
 # Clean up factor names (remove "w_" prefix)
 weights_long$bias_factor <- gsub("^w_", "", weights_long$bias_factor)
 
@@ -113,7 +103,7 @@ ggsave(
   bg = "white"                      # Background color
 )
 
-### Distance decay curves #####
+## Distance decay curves #####
 # 1. Extract mean parameters from the MCMC output
 mean_params <- colMeans(out$bias_estimate)
 mean_q <- mean_params["q"]
@@ -134,40 +124,39 @@ for (factor_name in names(mean_weights)) {
 
 # 4. Convert to long format for ggplot
 curve_long <- curve_data %>%
-  pivot_longer(
-    cols = -distance,
-    names_to = "bias_factor",
-    values_to = "sampling_rate"
-  ) %>%
-  mutate(
-    # Clean up factor names for plotting
-    bias_factor_clean = gsub("^w_", "", bias_factor),
-    bias_factor_clean = gsub("\\.", " ", bias_factor_clean)
-  )
+                  pivot_longer(
+                    cols = -distance,
+                    names_to = "bias_factor",
+                    values_to = "sampling_rate"
+                  ) %>%
+                  mutate(
+                    # Clean up factor names for plotting
+                    bias_factor_clean = gsub("^w_", "", bias_factor),
+                    bias_factor_clean = gsub("\\.", " ", bias_factor_clean)
+                  )
 
 # 5. Create the combined plot
-distance_plot <- ggplot(curve_long, aes(x = distance, y = sampling_rate, color = bias_factor_clean)) +
-  geom_line(linewidth = 1.2, alpha = 0.8) +
+distance_plot <- ggplot(curve_long, 
+                        aes(x = distance, 
+                            y = sampling_rate, 
+                            color = bias_factor_clean)) +
+                        geom_line(linewidth = 1.2, alpha = 0.8) +
   scale_color_manual(values = sampbias_colors[1:length(mean_weights)]) +
-  labs(
-    title = "",
-    x = "Distance to bias (km)",
-    y = "Sampling Rate",
-    color = "Bias Factor"
-  ) +
-  theme_minimal() +
-  theme(
-    legend.position = "bottom",
-    legend.text = element_text(size = 10),
-    panel.grid.major = element_line(color = "grey90"),
-    panel.grid.minor = element_line(color = "grey95")
-  ) +
-  guides(color = guide_legend(nrow = 2, byrow = TRUE))
+                  labs(title = "",
+                    x = "Distance to bias (km)",
+                    y = "Sampling Rate",
+                    color = "Bias Factor") +
+                  theme_minimal() +
+                  theme(legend.position = "bottom",
+                    legend.text = element_text(size = 10),
+                    panel.grid.major = element_line(color = "grey90"),
+                    panel.grid.minor = element_line(color = "grey95")) +
+                  guides(color = guide_legend(nrow = 2, byrow = TRUE))
 
 ggsave(file = "descNogen_distance_bias_plot01.png", plot = distance_plot,
        width = 8, height = 4, dpi = 600)
 
-# SampBias maps ####
+# Plot SampBias maps ####
 proj <- project_bias(out)
 saveRDS(proj,'proj_samp_bias_combined_01')
 map_bias(proj)
@@ -181,21 +170,19 @@ names(raster_bias[[3]]) <- 'Prot. Areas + Roads\n Pop. places'
 names(raster_bias[[4]]) <- 'Prot. Areas + Roads\n Pop. places + Rivers'
 
 
-
-# plot map
+# Plot map combined_SamplingRate_01 ####
 ggplot() +
   geom_spatraster(data = raster_bias) +
   geom_sf(data = occurrences_sf, aes(geometry = geometry),
           fill = NA, color = "black", size = 0.1) +  #
   facet_wrap(~lyr, ncol = 2) + # Facet by layer
-  # Add a color scale; viridis is a good default choice
   scale_fill_viridis_c(option = "plasma", na.value = "transparent")+
   labs(title = "", fill = "Sampling rate") +
   theme_minimal()
 
 ggsave("combined_SamplingRate_01.png", plot = last_plot(), device = "png",
        width = 8, height = 10, units = "in", dpi = 600)
-
+# Now map combined_difftoMax ####
 raster_bias1 <- proj[[5]]
 raster_bias1 <- mask(raster_bias1, area)
 raster_bias1 <- crop(raster_bias1, area)
@@ -208,8 +195,7 @@ ggplot() +
                   fill = NA, color = "white", linewidth = 0.5,
                   linetype = "longdash") + 
   geom_sf(data = occurrences_sf, aes(geometry = geometry),
-          fill = NA, color = "black", size = 0.5) +  #
-  # Add a color scale; viridis is a good default choice
+          fill = NA, color = "black", size = 0.5) +
   scale_fill_viridis_c(option = "plasma", na.value = "transparent")+
   labs(title = " ", fill = "Diff. to max") +
   theme_minimal()

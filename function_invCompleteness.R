@@ -14,7 +14,7 @@ occ_gen_map <- function(data1, title){
     geom_sf(data= study_area_pol, fill = 'lightgrey', color = "lightgrey", linewidth = 0.7) +
     geom_sf(data = grid, fill = "transparent", color = "black") +
     geom_sf(data = data1, color = 'purple') +
-    # geom_sf(data = data2, color = 'orange') +
+    geom_sf(data = data2, color = 'orange') +
     coord_sf(crs = crs) +
     ggtitle(title) +
     theme_minimal() + 

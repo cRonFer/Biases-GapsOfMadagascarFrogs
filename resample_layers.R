@@ -2,34 +2,33 @@ wd <- 'C:/Users/Joaquin Hortal/Desktop/NICED_SCENIC/Albert-Ranas'
 wd <- 'C:/Users/MNCN-JHICA/Desktop/proyectoInveCov'
 setwd(wd)
 
-library(sf)
-library(ggplot2)
-library(terra)
-library(tidyterra)
-
 # Load study area ####
 crs = 4326
 area <- read_sf('shpfiles/studyArea4326_mdg&myt.gpkg')
 area <- st_transform(area, crs)
 grid <- st_read('shpfiles/grid_01.gpkg')
-####creacion capas habitat coverage ####
-### raster climatico como referencia
+
+#### habitat coverage layers ####
+### chelsa raster as reference
 clim_ras <- rast('C:/Users/MNCN-JHICA/Downloads/chelsa/chelsa_bio1_1981_2010_WGS84.tif')
+clim_ras <- rast('C:/Users/Joaquin Hortal/Desktop/NICED_SCENIC/livia serpientes/capas/chelsa/chelsa_bio1_1981_2010_WGS84.tif')
 raster_mask <- mask(clim_ras, area)
 raster_mask <- crop(raster_mask, area)
-# Crear un raster vacío con la estructura EXACTA del original
-raster_plantilla <- rast(ext(raster_mask), 
+
+# Create an empty raster with the exact same str
+raster_mask <- rast(ext(raster_mask), 
                          resolution = res(raster_mask),
                          crs = crs(raster_mask))
 
 ### land type
-land <- vect('landType.gpkg')
+land <- vect('shpfiles/landType.gpkg')
 plot(land)
 
 rasterizado <- rasterize(land, raster_mask, field = "CODE")
 plot(rasterizado)
 levels(rasterizado)
 writeRaster(rasterizado, 'landType.tif')
+
 ### vegetation
 veg <- rast('shpfiles/moatsmith_1km.tif')
 raster_resampleado <- resample(x = veg,   # Tu raster original
@@ -46,16 +45,15 @@ forest_resampleado <- resample(x = forest,   # Tu raster original
 plot(forest_resampleado)
 writeRaster(forest_resampleado, 'forest_resampled.tif')
 
-
 ## tree height
-tree_height <- rast('tree_height.tif')
+tree_height <- rast('shpfiles/tree_height.tif')
 treeh_resampleado <- resample(x = tree_height,   # Tu raster original
                               y = raster_mask,   # La capa de referencia
                               method = "mean")         # Método para categorías
 plot(treeh_resampleado)
 writeRaster(treeh_resampleado, 'treeheight_resampled.tif')
 
-### land cover reclass and resampled
+### land cover reclass and resampled ####
 lcov <- rast('C:/Users/MNCN-JHICA/Downloads/landUse_combined_MDG.tif')
 lcov_classes <- read.csv('C:/Users/MNCN-JHICA/Desktop/proyectoInveCov/land_cover_classes.csv', sep = ';')
 lcov_classes <- lcov_classes[, -2]
@@ -93,67 +91,63 @@ lcov_resamp <- resample(x = lcov_mask,   # Tu raster original
 lcov_mask <- rast('shpfiles/landUse_reclassif2.tif')
 lcov_extr <- extract(lcov_mask, grid)
 
-# Calcular porcentajes por celda del grid
-porcentajes <- lcov_extr %>%
-  group_by(ID) %>%
-  count(landUse_combined_MDG) %>%
-  mutate(porcentaje = (n / sum(n)) * 100) %>%
-  ungroup() %>%
-  select(ID, clase = landUse_combined_MDG, porcentaje)
+# Perc by cell
+perc <- lcov_extr %>%
+                    group_by(ID) %>%
+                    count(landUse_combined_MDG) %>%
+                    mutate(perc = (n / sum(n)) * 100) %>%
+                    ungroup() %>%
+                    select(ID, clase = landUse_combined_MDG, perc)
 
-# 4. Convertir a formato wide para una tabla por grid
-porcentajes_wide <- porcentajes %>%
-  pivot_wider(
-    id_cols = ID,
-    names_from = clase,
-    values_from = porcentaje,
-    names_prefix = "clase_",
-    values_fill = 0
-  )
-
-# 5. Unir con el grid original
-grid_resultado <- grid %>%
-  mutate(ID = row_number()) %>%
-  left_join(porcentajes_wide, by = "ID")
-
-
-# Crear capas separadas por clase
+# To wide format 1 table per grid
+perc_wide <- perc %>%
+                      pivot_wider(
+                        id_cols = ID,
+                        names_from = clase,
+                        values_from = perc,
+                        names_prefix = "class_",
+                        values_fill = 0
+                      )
+# Join to original grid
+grid_result <- grid %>%
+                    mutate(ID = row_number()) %>%
+                    left_join(perc_wide, by = "ID")
+# Create separate layersper class
 for(class in 4:21) {
-  grid_lyr <- grid_resultado[,c(1,class)]
-  st_write(grid_lyr, paste0("grid_clase_", class, ".gpkg")
+  grid_lyr <- grid_result[,c(1,class)]
+  st_write(grid_lyr, paste0("class_", class, ".gpkg")
   )
 }
 
-### vegetation
+### vegetation reclass and resampled #####
 veg_extr <- extract(veg, grid)
 
-# Calcular porcentajes por celda del grid
+# Calc perc per cell of the grid
 perc <- veg_extr %>%
-  group_by(ID) %>%
-  count(moatsmith_1km) %>%
-  mutate(porcentaje = (n / sum(n)) * 100) %>%
-  ungroup() %>%
-  select(ID, clase = moatsmith_1km, porcentaje)
+          group_by(ID) %>%
+          count(moatsmith_1km) %>%
+          mutate(perc = (n / sum(n)) * 100) %>%
+          ungroup() %>%
+          select(ID, clase = moatsmith_1km, perc)
 
-# 4. Convertir a formato wide para una tabla por grid
+# To wide format 1 table per grid
 perc_wide <- perc %>%
-  pivot_wider(
-    id_cols = ID,
-    names_from = clase,
-    values_from = porcentaje,
-    names_prefix = "clase_",
-    values_fill = 0
-  )
+                  pivot_wider(
+                    id_cols = ID,
+                    names_from = clase,
+                    values_from = perc,
+                    names_prefix = "class_",
+                    values_fill = 0
+                  )
 
-# 5. Unir con el grid original
-grid_resultado <- grid %>%
-  mutate(ID = row_number()) %>%
-  left_join(perc_wide, by = "ID")
+# Join to original grid
+grid_result <- grid %>%
+                  mutate(ID = row_number()) %>%
+                  left_join(perc_wide, by = "ID")
 
-
-# Crear capas separadas por clase
+# Create separate layersper class
 for(class in 3:11) {
-  grid_lyr <- grid_resultado[,c(1,class)]
-  st_write(grid_lyr, paste0("veg_grid10_", class, ".gpkg")
-  )
-}
+            grid_lyr <- grid_resulta[,c(1,class)]
+            st_write(grid_lyr, paste0("veg_grid10_", class, ".gpkg")
+            )
+          }

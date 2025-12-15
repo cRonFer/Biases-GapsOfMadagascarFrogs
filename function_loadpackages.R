@@ -18,7 +18,8 @@ setup_packages <- function(packages, repos = "https://cloud.r-project.org") {
 required_pkgs <- c('data.table', 'stringr', 'tidyverse', 'KnowBR', 'sf', 'terra',
                    'rnaturalearth', 'ggplot2', 'svglite', 'patchwork', 'here',
                    'ggExtra', 'biscale', 'cowplot', 'tidyterra', 'maps',
-                   'nFactors', 'rSDM', 'psych', 'ggside', 'gridExtra')
+                   'nFactors', 'rSDM', 'psych', 'ggside', 'gridExtra',
+                   'sampbias', 'viridis', 'tidyr')
 
 
 # Setup packages
