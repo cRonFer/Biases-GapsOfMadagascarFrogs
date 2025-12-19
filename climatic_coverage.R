@@ -1,39 +1,27 @@
 wd <- 'C:/Users/Joaquin Hortal/Desktop/NICED_SCENIC/Albert-Ranas'
-wd <- 'C:/Users/MNCN-JHICA/Desktop/proyectoInveCov'
-
-
-library(sf)
-library(tidyr)
-library(data.table)
-library(ggplot2)
-library(terra)
-library(tidyterra)
-library(psych)
-library(ggside)
-library(gridExtra)
-library(exactextractr)
-
+# wd <- 'C:/Users/MNCN-JHICA/Desktop/proyectoInveCov'
 setwd(wd)
+
 # Load study area ####
 crs = 'EPSG:4326'
 study_area_pol <- read_sf('shpfiles/studyArea4326_mdg&myt.gpkg')
 study_area_pol_crs <- st_transform(study_area_pol, crs)
-grid <- st_read('shpfiles/gridSQ_77220.gpkg')
+grid <- st_read('shpfiles/grid_01.gpkg')
 grid_crs <- st_transform(grid, crs)
 
 grid_crs <- st_join(grid_crs, study_area_pol_crs, join = st_intersects)
 grid_crs <- grid_crs %>% filter(!is.na(NAME_0))
 plot(grid_crs)
-res(grid_crs)
+
 
 # Load occurrences dataset (3 column format: Species, Longitude, Latitude) ####
-data0 <- fread('Data/Frogsdescribedrev.csv', sep = ';')
+data0 <- fread('Data/.csv', sep = ';') #combinedFrogsrev #frogsDescriberev
 data0 <- data0[Genetics == 'NO',]
 data_points <- vect(data0, geom = c("Longitude", "Latitude"),
                     crs = crs)
 # Load Climate data #####
 climwd <- 'C:/Users/Joaquin Hortal/Desktop/gis_layers/CHELSA_10km'
-climwd <- 'C:/Users/MNCN-JHICA/Downloads/chelsa'
+# climwd <- 'C:/Users/MNCN-JHICA/Downloads/chelsa'
 rlist <- list.files(climwd, pattern = "*.tif$")
 
 setwd(climwd)
@@ -42,18 +30,13 @@ raster_mask <- mask(climRaster, study_area_pol)
 raster_mask <- crop(raster_mask, study_area_pol)
 climRaster_res <- raster_mask
 
-# More accurate extraction considering partial cell coverage
-stats_exact <- exact_extract(raster_mask, grid_crs, 
-                             fun = c('mean'))
-result_polygons <- cbind(grid_crs, stats_exact)
-plot(result_polygons)
-climRaster_res <- rasterize(result_polygons, field = "ID")
-
-climRaster_res <- aggregate(climRaster_res, fact=7, fun = "mean")
+# IF aggreg is nedded run this section - set fact!
+climRaster_res <- aggregate(climRaster_res, fact = 3, fun = "mean")
 plot(climRaster_res[[1]])
 res(climRaster_res)
+
 setwd(wd)
-#######
+### Load standardization, Schoener D, kruskal Wallis functions ####
 std <- function(x){(x - mean(x, na.rm = T)) / sd(x, na.rm = T)}
 # Schoener's D: quantifies the overlap between the location of well-sampled
 # sites and cells with most frequent conditions
@@ -66,7 +49,24 @@ SchoenersD <- function(x, y) {
   return(D)
 }
 # Function to extract and save test statistics
-# PCA  ####
+save_kruskal_csv <- function(formula, filename = "kruskal_stats.txt"){
+  result <- kruskal.test(formula)
+  # Create data frame with results
+  results_df <- data.frame(
+    Test = deparse(formula),
+    Chi_squared = result$statistic,
+    DF = result$parameter,
+    P_value = result$p.value,
+    Method = result$method,
+    StringsAsFactors = FALSE
+  )
+  
+  # Save to CSV
+  write.csv(results_df, filename, row.names = FALSE)
+  message(paste("Results saved to:", filename))
+  return(results_df)
+}
+# PCA ####
 # First we can reduce the variables to fewer variables using a PCA.
 # Here we standardize and prepare the data.
 v <- as.data.frame(values(climRaster_res)) # get env values from rasters
@@ -107,12 +107,12 @@ xmax <- max(v4[, 1], na.rm = TRUE)
 ymin <- min(v4[, 2], na.rm = TRUE)
 ymax <- max(v4[, 2], na.rm = TRUE)
 # This function creates the cartesian plan comprising the min and max PCA scores
-env_space_res = 0.3
+env_space_res = 0.2
 env_space <- rast(xmin = xmin, xmax = xmax,
                   ymin = ymin, ymax = ymax,
                   res = env_space_res) # SET HERE size of bins
 values(env_space) <- 0
-env_space <<- env_space
+env_space <- env_space
 env_space_area <- env_space # duplicate this object for the next step
 
 # Insert our PCA values into this env_space
@@ -127,7 +127,6 @@ area_values <- values(env_space_area)
 area_values[area_values == 0] <- NA
 nCellTotal <- length(area_values[!is.na(area_values)])
 values(env_space_area) <- area_values
-
 
 # Env. Space of all occurrences ####
 stack <- env_space_area
@@ -145,12 +144,9 @@ env_space_All[env_space_All == 0] <- NA
 stack <- c(stack, env_space_All) # Join the new raster from order
 names(stack[[1]]) <- 'Study area'
 names(stack[[2]]) <- 'Species Occurrences'
-
 # Well surveyed cells #########
 # Env. Space of all occurrences of order
-WS_cent <- read.csv(paste0(wd, '/outputs_knowBR/WS_centroids_desc_03_nogen.csv'), sep=";")
-# WS_cent <- read.csv(paste0(wd, '/outputs_knowBR/combined_03/WS_centroids.csv'), 
-                    # sep=";")
+WS_cent <- read.csv(paste0(wd, '/outputs_knowBR/WS_centroids_comb_01_nogen.csv'), sep=";")
 
 WS_centroids <- vect(WS_cent,
                       geom = c("lon", "lat"), crs = crs)
@@ -171,7 +167,7 @@ plot(stack)
 # Schoener's D ####
 # Transform the abundance of each cell into probabilities.
 # Relative frequency of climate type for all the study area
-area_values <- area_values/sum(area_values, na.rm = TRUE)
+area_values <- area_values / sum(area_values, na.rm = TRUE)
 WS_values <- values(env_space_All)
 # Relative frequency of climate type for well-sampled cells
 WS_values <- WS_values/sum(WS_values, na.rm = TRUE)
@@ -205,25 +201,7 @@ pvalueD <<- p
 print(paste("p value equals = ", round(p, 3)))
 
 # Kruskal-Wallis and kolmogorov Smirnov tests ####
-save_kruskal_csv <- function(formula, filename = "kruskal_stats.txt"){
-  result <- kruskal.test(formula)
-  # Create data frame with results
-  results_df <- data.frame(
-    Test = deparse(formula),
-    Chi_squared = result$statistic,
-    DF = result$parameter,
-    P_value = result$p.value,
-    Method = result$method,
-    StringsAsFactors = FALSE
-  )
-  
-  # Save to CSV
-  write.csv(results_df, filename, row.names = FALSE)
-  message(paste("Results saved to:", filename))
-  return(results_df)
-}
-
-setwd(paste0(wd,'/climatic_coverage/desc_03_nogen'))
+setwd(paste0(wd,'/climatic_coverage/comb_01_nogen'))
 for (pcaAxis in 1:2){
   # X axis is a probability density
   # Kruskal-Wallis verifies whether 1) the distribution of well-sampled sites
@@ -241,7 +219,6 @@ for (pcaAxis in 1:2){
   
 }
 
-
 ### Rarity analyses ########
 # We can check how many environmental space has been sampled
 # and how does these cells look like.
@@ -249,6 +226,9 @@ for (pcaAxis in 1:2){
   percen <- round(sampled, 2)*100
   prin <- paste0(percen, "% of our study area climate types covered by well-sampled cells")
   print(prin)
+  
+  surface <- WS_values
+  surface[is.na(area_values) | area_values == 0] <- NA
   # Is this env. space sampled corresponding to rare climates?
   # First, we make values vary from 0 to 1 according to their rarity:
   # Values close to 0, are very common, values close to 1 very rare
@@ -263,7 +243,7 @@ for (pcaAxis in 1:2){
   x_kw <- c(area_values01, area_values01[surface > 0])
   g_kw <- as.factor(c(rep("area", length(area_values01)),
                       rep("ws", length(area_values01[surface > 0]))))
-  
+
   save_kruskal_csv(x_kw ~ g_kw, "rarity_kruskal_Wallis_stats.txt")
   # Kolmogorov smirnov test
   area_values03 <- na.omit(area_values01)
@@ -276,8 +256,7 @@ for (pcaAxis in 1:2){
   rarity_env <- env_space
   values(rarity_env) <- area_values01
   rarity_Percell <- terra::extract(rarity_env,
-                                   v4,
-                             cells = TRUE)[, 2]
+                                   v4, cells = TRUE)[, 2]
 
   rarity_map <- climRaster_res[[1]]
   values(rarity_map) <- rarity_Percell
@@ -288,6 +267,10 @@ for (pcaAxis in 1:2){
 plot(stackF)  
 
 # Plot environmental spaces ####
+simple_labels <- function(x) {format(round(x, 1), nsmall = 1)} # Rounds to 1 decimal place
+my_window <- ext(stack) # Env. space limits
+
+### Env space comparison (study area vs occurrences vs WS cells)
 env_space_area_df <- as.data.frame(stackF[[1]], xy = TRUE)
 env_space_All_df <- as.data.frame(stackF[[2]], xy = TRUE)
 env_space_WS_df <- as.data.frame(stackF[[3]], xy = TRUE)
@@ -296,32 +279,6 @@ env_space_area_df <- env_space_area_df[env_space_area_df$`Study area` != 0, ]
 env_space_All_df <- env_space_All_df[env_space_All_df$`Species Occurrences` != 0, ]
 env_space_WS_df <- env_space_WS_df[env_space_WS_df$`Well Surveyed cells` != 0, ]
 names(env_space_area_df)[3] <- "freq"
-
-
-env_space_plot <- function(rdata, col_palette = env_space_gradient_colors){
-  ggplot() +
-    geom_spatraster(data = rdata, aes(fill = after_stat(value))) +
-    scale_fill_gradientn(colours = col_palette,
-                         na.value = "transparent", name = '') +
-    scale_y_continuous(labels = simple_labels) +
-    scale_x_continuous(labels = simple_labels) +
-    theme_minimal()
-}
-simple_labels <- function(x) {format(round(x, 1), nsmall = 1)} # Rounds to 1 decimal place
-my_window <- ext(stack) # Env. space limits
-
-envspace_palette <- colorRampPalette(c("#495970", "#6C7B8B",
-                                     "#8DB6CD", "#FFB6C1", "#F08080"))
-env_space_gradient_colors <- envspace_palette(100)
-
-### Env space comparison (study area vs occurrences vs WS cells)
-envs1_plot <- env_space_plot(stackF[[1]])+ xlab('PCA1') + ylab('PCA2')
-envs2_plot <- env_space_plot(stackF[[2]])+ xlab('PCA1')
-envs3_plot <- env_space_plot(stackF[[3]])+ xlab('PCA1')
-
-combined_plot <- arrangeGrob(envs1_plot, envs2_plot, envs3_plot, ncol = 3)
-# Save using ggsave
-ggsave("envSpacePlots_descnogen03.png", combined_plot, width = 15, height = 6, dpi = 600)
 
 env_plot2 <- ggplot() +
   geom_raster(data = env_space_area_df, aes(x = x, y = y),
@@ -422,7 +379,7 @@ env_plot2 <- gridExtra::grid.arrange(
                           gp = grid::gpar(fontsize = 14, fontface = 'bold')))
 
 # Save using ggsave
-ggsave('envSpacePlots_freq_descnogen03.png', env_plot2, width = 6, 
+ggsave('envSpacePlots_freq_comb01.png', env_plot2, width = 6, 
        height = 6, dpi = 600)
 
 ## Plot rarity ####
@@ -430,7 +387,29 @@ ggsave('envSpacePlots_freq_descnogen03.png', env_plot2, width = 6,
 rarity_palette <- colorRampPalette(c( "#8B8B7A","#CDCDB4", "#FFFFE0",
                                         "#FFC0CB",  "#CD6889", "#8B475D"))
 rarity_gradient_colors <- rarity_palette(100)
+create_density_plot <- function(){
+  plot(density_data,
+       main = "",
+       xlab = "Climate rarity index",
+       ylab = 'Frequency',
+       ylim = c(0, max(density_data$y) * 1.1),
+       font = 2, font.lab = 2,
+       cex.lab = 1.6, cex.axis = 1.6,
+       type = "n") 
+  # grad under curve
+  x <- density_data$x
+  y <- density_data$y
+  for(i in 1:(length(x)-1)) {
+    polygon(x = c(x[i], x[i+1], x[i+1], x[i]),
+            y = c(0, 0, y[i+1], y[i]),
+            col = rarity_gradient_colors[floor(i/length(x)*100)],
+            border = NA)
+  }
   
+  # Añadir la línea superior de celdas bien muestradas
+  lines(density(na.omit(area_values01[surface > 0])), col = "black", lwd = 2, lty = 2)
+}
+
 envspace_rarity_plot <- ggplot()  +
     geom_spatraster(data = rarity_env, aes(fill = after_stat(value))) +
     scale_fill_gradientn(colours = rarity_gradient_colors,
@@ -441,7 +420,7 @@ envspace_rarity_plot <- ggplot()  +
     scale_x_continuous(labels = simple_labels) +
     xlab('PC1') + ylab('PC2') +
     theme_minimal()
-ggsave('descnogen03_env_space_rarity.png', envspace_rarity_plot, 
+ggsave('comb01_env_space_rarity.png', envspace_rarity_plot, 
        height = 6, width = 6, dpi = 600)
 
 rarPlot <- ggplot() +
@@ -454,34 +433,12 @@ rarPlot <- ggplot() +
     theme(plot.background = element_rect(fill = "white", color = "transparent"),
           legend.position = "none",
           plot.title = element_text(size = 16, face = "bold", hjust = 1.1))
-ggsave('descnogen03_map_rarity.png', rarPlot, 
+ggsave('comb01_map_rarity.png', rarPlot, 
        height = 6, width = 6, dpi = 600)
 
 density_data <- density(na.omit(area_values01))
-create_density_plot <- function(){
-    plot(density_data,
-         main = "",
-         xlab = "Climate rarity index",
-         ylab='Frequency',
-         ylim = c(0, max(density_data$y) * 1.1),
-         font = 2, font.lab = 2,
-         cex.lab = 1.6, cex.axis = 1.6,
-         type = "n")  # No plotear la línea todavía
-    # Crear gradiente bajo la curva
-    x <- density_data$x
-    y <- density_data$y
-    for(i in 1:(length(x)-1)) {
-      polygon(x = c(x[i], x[i+1], x[i+1], x[i]),
-              y = c(0, 0, y[i+1], y[i]),
-              col = rarity_gradient_colors[floor(i/length(x)*100)],
-              border = NA)
-    }
-    
-    # Añadir la línea superior de celdas bien muestradas
-    lines(density(na.omit(area_values01[surface > 0])), col = "black", lwd = 2, lty = 2)
-  }
 
-png("descnogen03_rarity_freq.png",
+png("comb01_rarity_freq.png",
     width = 10,    # 10 pulgadas
     height = 5,    # 8 pulgadas  
     units = "in",       # Alto en píxeles
@@ -491,109 +448,3 @@ create_density_plot()
 
 dev.off()
 
-### comparison of frequencies by scenario ####
-env_space_WS_df_desc <- env_space_WS_df
-coords_WS_desc <- coords_WS
-
-env_space_WS_df_desc_gen <- env_space_WS_df
-coords_WS_desc_gen <- coords_WS
-
-env_space_WS_df_desc_nogen <- env_space_WS_df
-coords_WS_desc_nogen <- coords_WS
-
-
-# Gráfico de densidad
-(freqPCA1 <- ggplot() +
-  geom_density(
-    data = as.data.frame(myPCA$scores),
-    aes(x = myPCA$scores[,1], y = after_stat(scaled),
-        fill = "Overall climate conditions"),
-    linewidth = 0.5,
-    colour = "black",
-    linetype = "solid"
-  ) +
-  geom_density(
-    data = as.data.frame(coords_WS_desc),
-    aes(x = coords_WS_desc[,1], y = after_stat(scaled),
-        fill = "Well-surveyed cells - Combined dataset"),
-    alpha = 0.1, linewidth = 1,
-    colour = "maroon",
-    linetype = "solid"
-  ) +
-  geom_density(
-    data = as.data.frame(coords_WS_desc_gen),
-    aes(x = coords_WS_desc_gen[,1], y = after_stat(scaled),
-        fill = "Well-surveyed cells with genetic information"),
-    alpha = 0.3, linewidth = 0.3,  
-    colour = "black",
-    linetype = "dashed"
-  ) +
-  geom_density(
-    data = as.data.frame(coords_WS_desc_nogen),
-    aes(x = coords_WS_desc_nogen[,1], y = after_stat(scaled),
-        fill = "Well-surveyed cells without genetic information"),
-    alpha = 0.3, linewidth = 0.3, 
-    colour = "black",
-    linetype = "dashed"
-  ) +
-  scale_fill_manual(
-    name = NULL,
-    values = c(
-      "Overall climate conditions" = "#CDC0B0",
-      "Well-surveyed cells - Combined dataset" = "maroon",
-      "Well-surveyed cells with genetic information" = "orange",
-      "Well-surveyed cells without genetic information" = "purple"
-    )) +
-  ylab('Freq') + xlab('PCA1') +
-  theme_minimal()
-)
-ggsave('freqPCA1_comparison.png', freqPCA1, 
-       height = 4, width = 10, dpi = 600)
-
-
-freqPCA2 <- ggplot() +
-  geom_density(
-    data = as.data.frame(myPCA$scores),
-    aes(x = myPCA$scores[,2], y = after_stat(scaled),
-        fill = "Overall climate conditions"),
- linewidth = 0.5,
-    colour = "black",
-    linetype = "solid"
-  ) +
-  geom_density(
-    data = as.data.frame(coords_WS_desc),
-    aes(x = coords_WS_desc[,2], y = after_stat(scaled),
-        fill = "Well-surveyed cells - Combined dataset"),
-    alpha = 0.1, linewidth = 1,
-    colour = "maroon",
-    linetype = "solid"
-  ) +
-  geom_density(
-    data = as.data.frame(coords_WS_desc_gen),
-    aes(x = coords_WS_desc_gen[,2], y = after_stat(scaled),
-        fill = "Well-surveyed cells with genetic information"),
-    alpha = 0.3, linewidth = 0.3,  
-    colour = "black",
-    linetype = "dashed"
-  ) +
-  geom_density(
-    data = as.data.frame(coords_WS_desc_nogen),
-    aes(x = coords_WS_desc_nogen[,2], y = after_stat(scaled),
-        fill = "Well-surveyed cells without genetic information"),
-    alpha = 0.3, linewidth = 0.3, 
-    colour = "black",
-    linetype = "dashed"
-  ) +
-  scale_fill_manual(
-    name = NULL,
-    values = c(
-      "Overall climate conditions" = "#CDC0B0",
-      "Well-surveyed cells - Combined dataset" = "maroon",
-      "Well-surveyed cells with genetic information" = "orange",
-      "Well-surveyed cells without genetic information" = "purple"
-    )) +
-  ylab('Freq') + xlab('PCA2') +
-  theme_minimal()
-
-ggsave('freqPCA2_comparison.png', freqPCA2, 
-       height = 4, width = 10, dpi = 600)

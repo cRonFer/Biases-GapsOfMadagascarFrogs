@@ -19,7 +19,7 @@ required_pkgs <- c('data.table', 'stringr', 'tidyverse', 'KnowBR', 'sf', 'terra'
                    'rnaturalearth', 'ggplot2', 'svglite', 'patchwork', 'here',
                    'ggExtra', 'biscale', 'cowplot', 'tidyterra', 'maps',
                    'nFactors', 'rSDM', 'psych', 'ggside', 'gridExtra',
-                   'sampbias', 'viridis', 'tidyr', 'stringr')
+                   'sampbias', 'viridis', 'tidyr', 'stringr', 'exactextractr')
 
 
 # Setup packages

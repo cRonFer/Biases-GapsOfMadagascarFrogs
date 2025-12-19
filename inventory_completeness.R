@@ -10,7 +10,7 @@ setwd(wd)
   study_area_pol <- read_sf('shpfiles/studyArea4326_mdg&myt.gpkg')
   study_area_pol_crs <- st_transform(study_area_pol, crs)
   data(adworld) # knowBR needs add world polygon to work
-
+  gridResName <- '_07'
   grid <- st_read('shpfiles/grid_MDG75.gpkg') # grid_01 or grid_03
   
   grid <- st_join(grid, study_area_pol, join = st_intersects)
@@ -23,10 +23,10 @@ setwd(wd)
   grid_ea <- grid_spatial
   est_sum <- grid[0, ]
   
-  # Occurrence records ####
+# Occurrence records ####
   # Load occurrences dataset (3 column format: Species, Longitude, Latitude)
-  data <- fread('Data/FrogsDescribedrev.csv', sep = ';')
-  # data <- fread('invecov/Data/combinedFrogsrev.csv', sep = ';')
+  data <- fread('Data/FrogsDescribedrev.csv', sep = ';') # combinedFrogsrev.csv
+  dtName <- 'desc' #'comb'
   # transform into spatial object
   data_points <- vect(data, geom = c("Longitude", "Latitude"), 
        crs = crs)
@@ -60,7 +60,9 @@ setwd(wd)
          width = 10, height = 10, dpi = 600)
   
 # Inventory completeness analysis ####
-  # Well-surveyed criteria:
+  dir_e = paste0(dtName, gridResName)
+  create_and_set_directory(dir_e)
+    # Well-surveyed criteria:
   NRecords_WS <- 50
   Ratio_WS <- 5
   Slope_WS <- 0.02
@@ -78,10 +80,7 @@ setwd(wd)
             axis.text = element_text(size = 10, face = "bold"),
             axis.title = element_text(size = 10, face = "bold"))
   }
-  # Create working directory for described DT - All occurrences ####
-  dir_e = 'described_07'
-  create_and_set_directory(dir_e)
-  
+  # All occurrences ####
   colnames(data)[1] <- 'species'
   data <- data[,c(1,3,2,4,5)]
   data0 <- data[,-4]
@@ -99,28 +98,30 @@ setwd(wd)
   p3 <- threshold_plot(est$Slope, Slope_WS, 'Slope')
   completn_thresholds <- grid.arrange(p1, p2, p3, ncol = 3)
   ggsave('completeness_thresholds.png', plot = completn_thresholds,
-         width = 12, height = 5)
+         width = 12, height = 5, bg = "white", dpi = 600)
   
   # plot completeness values study area map
-  comp_shp <- merge(grid, est, by.x = 'id', 
-                    by.y = 'Area', all.x = TRUE) # Write here 'by.x' = the unique identifier name of your grid shapefile
+  comp_shp <- merge(grid, est, by.x = 'id', # by.x identifier name of your grid shapefile
+                    by.y = 'Area', #by.yidentifier name of estimators file
+                    all.x = TRUE) 
   comp_shp <- comp_shp %>%
                       filter(!is.na(Completeness)) %>%
                       st_transform(crs)
   
   # Filter est dataset selecting WELL-SURVEYED CELLS:
   estWS <- comp_shp %>% filter(Records >= NRecords_WS) %>%
-    filter(Ratio >= Ratio_WS) %>%
-    filter(Slope <= Slope_WS) %>%
-    filter(Completeness >= Completeness_WS)
- 
+                        filter(Ratio >= Ratio_WS) %>%
+                        filter(Slope <= Slope_WS) %>%
+                        filter(Completeness >= Completeness_WS)
+                     
   print(paste('There are ', nrow(estWS), 
               ' well surveyed cells in the study area based on the chosen thresholds'))
   # Map of Completeness
-    ggplot() +
+  ggplot() +
     geom_sf(data = study_area_pol, fill = 'lightgrey', color = 'darkgrey') +
     geom_sf(data = comp_shp, aes(fill = Completeness), color = "transparent") +
     geom_sf(data = estWS, fill = 'transparent', color = "black", linewidth = 1) +
+    
     scale_fill_viridis_c(limits = c(0, 100), option = "plasma", name = "",
                          direction = -1, alpha = 0.6) +
     theme_minimal() +
@@ -128,40 +129,41 @@ setwd(wd)
           legend.position = "none",
           plot.title = element_text(size = 16, face = "bold", hjust = 1.1))
   
-  ggsave('wellSurveyCells_Map.png', plot = last_plot(), dpi = 500, width = 6, height = 8)
+  ggsave('wellSurveyCells_Map.png', plot = last_plot(), 
+         dpi = 500, width = 6, height = 8, bg = 'white')
   
   # Extract centroids of Well Survey cells for the environmental Space analysis
   WS_cent <- st_centroid(estWS)
   
   WS_cent_dt <- WS_cent %>% dplyr::mutate(lon = sf::st_coordinates(.)[,1],
                                           lat = sf::st_coordinates(.)[,2]) %>%
-    dplyr::select(c(id, lon, lat))
+                            dplyr::select(c(id, lon, lat))
   WS_cent_dt$geometry <- NULL
   fwrite(WS_cent_dt, 'WS_centroids.csv', sep = ";")
   
-  # Inventory completeness analysis only occurrences with genetic information ####
-  data1 <- data %>% 
-             filter(Genetics == 'YES') %>% 
-              select(c(1:3,5))
-  # Create working directory
-  dir_e = 'described_07_gen'
+  # Occurrences with genetic information ####
+  sbsetName <- '_gen'
   setwd(wd)
+  dir_e = paste0(dtName, gridResName, sbsetName)
   create_and_set_directory(dir_e)
-
+  data1 <- data %>% 
+               filter(Genetics == 'YES') %>% 
+                  select(c(1:3,5))
+  
   KnowBPolygon(data = data1, shape = grid_spatial,
                admAreas = FALSE,  # Use predefined grid as personalized polygons
                shapenames = "id", Maps = FALSE,
                dec = ".")
 #### REPEAT FROM LINE 90
+  # Occurrences without genetic information####
+  sbsetName <- '_nogen'
+  setwd(wd)
+  dir_e = paste0(dtName, gridResName, sbsetName)
+  create_and_set_directory(dir_e)
   
-  # Inventory completeness analysis only occurrences without genetic information####
   data2 <- data %>% 
               filter(Genetics == 'NO') %>% 
-              select(c(1:3,5))
-  # Create working directory
-  dir_e = 'described_07_nogen'
-  setwd(wd)
-  create_and_set_directory(dir_e)
+                select(c(1:3,5))
   
   KnowBPolygon(data = data2, shape = grid_spatial,
                admAreas = FALSE,  # Use predefined grid as personalized polygons
@@ -169,11 +171,12 @@ setwd(wd)
                dec = ".")
   #### REPEAT FROM LINE 90
   
-# plot differences between datasets ####
+# Plot maps of WS cells comparion between datasets ####
 grid_spatial_ws <- grid
 WS_cent_dt <- fread(paste0(wd, '/described_07/WS_centroids.csv'), sep = ';')
 WS_cent_dt <- WS_cent_dt$id
-grid_spatial_ws <- grid_spatial_ws[grid_spatial_ws$id %in% WS_cent_dt,]
+grid_spatial_ws <- grid_spatial_ws[grid_spatial_ws$id %in% 
+                                     WS_cent_dt,]
 
 WS_cent_dt_gen <- fread(paste0(wd, '/described_07_gen/WS_centroids.csv'), sep = ';')
 WS_cent_dt_gen <- WS_cent_dt_gen$id
@@ -189,22 +192,25 @@ grid_spatial_ws_nogen <- grid_spatial_ws_nogen[grid_spatial_ws_nogen$id %in%
 
 setwd(wd)
 ggplot() +
-  geom_sf(data = study_area_pol, fill = 'lightgrey', color = 'darkgrey') +
-  geom_sf(data = grid_spatial_ws_nogen,
-          color = "transparent", fill = 'orange',linewidth = 0.1) +
+    geom_sf(data = study_area_pol, fill = 'lightgrey', color = 'darkgrey') +
   
-  geom_sf(data = grid_spatial_ws_gen,
-          color = "transparent", fill = 'purple', alpha = 0.5, linewidth = 0.1) +
-  geom_sf(data = grid_spatial_ws,
-          color = "black", fill = 'transparent', linewidth = 0.1) +
+    geom_sf(data = grid_spatial_ws_nogen,
+            color = "transparent", fill = 'orange',linewidth = 0.1) +
+    
+    geom_sf(data = grid_spatial_ws_gen,
+            color = "transparent", fill = 'purple', alpha = 0.5, linewidth = 0.1) +
   
-  theme_minimal() +
-  theme(plot.background = element_rect(fill = "white",
-                                         color = "transparent"),
+    geom_sf(data = grid_spatial_ws,
+            color = "black", fill = 'transparent', linewidth = 0.1) +
+    
+    theme_minimal() +
+    theme(plot.background = element_rect(fill = "white",
+                                           color = "transparent"),
           legend.position = "none",
           plot.title = element_text(size = 16, face = "bold", hjust = 1.1))
-  
-ggsave('comparisonWS_cells_07desc_Map.png', plot = last_plot(), dpi = 600, 
+    
+ggsave(paste0(dtName, gridResName, 'comparisonWS_cells_Map.png'), 
+       plot = last_plot(), dpi = 600, bg = 'white',
        width = 6, height = 8)
 
 

@@ -2,7 +2,6 @@ wd <- 'C:/Users/Joaquin Hortal/Desktop/NICED_SCENIC/Albert-Ranas'
 wd <- 'C:/Users/MNCN-JHICA/Desktop/proyectoInveCov'
 setwd(wd)
 
-
 # Load study area ####
 crs = 'EPSG:4326'
 study_area_pol <- read_sf('shpfiles/studyArea4326_mdg&myt.gpkg')
@@ -220,6 +219,7 @@ habBiasPlotWS <- function(var_field, title){
 }
 
 # plot and save:
+dir_e = 'habitatBias_outputs'
 habBiasPlot(var_field, varName)
 
 ggsave(paste0(varName, "_comb_Comparison.png"), plot = last_plot(), 
@@ -268,7 +268,7 @@ rownames(results_kw) <- paste0("Test_", 1:6)
 # Kruskal-Wallis verifies whether 1) the distribution of well-sampled sites
 # is an unbiased subset of the entire habitat conditions.
 # If this is so, p > 0.05
-# Kruskal-Wallis and kolmogorov Smirnov tests ####
+
   for(j in seq_along(list2)){
     parts <- strsplit(list2[j], "\\$")[[1]]
     df_name <- parts[1]
